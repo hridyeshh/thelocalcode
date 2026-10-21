@@ -1,0 +1,29 @@
+{
+  "name": "thelocalcode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "oxlint && { grep -rnE '#[0-9a-fA-F]{3,8}\\b|\\b[0-9]+px\\b' app components --include='*.tsx'; test $? = 1; }",
+    "test": "node --test lib/stops.test.ts lib/contact.test.ts lib/floppy.test.ts",
+    "art": "python3 scripts/process-art.py",
+    "capture": "node scripts/capture-sites.mjs"
+  },
+  "dependencies": {
+    "motion": "^12.43.0",
+    "next": "15.5.27",
+    "react": "19.1.2",
+    "react-dom": "19.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "oxlint": "^1.87.0",
+    "playwright-core": "^1.50.0",
+    "typescript": "^5"
+  }
+}
