@@ -153,7 +153,7 @@ export function Cta() {
       {STICKERS.map((s) => (
         <Sticker key={s.text} s={s} p={p} range={[at(C.rise, s.at), at(C.rise, s.at + 0.25)]} />
       ))}
-      <Mac className="scene-mac" style={style} alt="The computer, with the two of us cheering on its screen" outside={<FloppyRig t={eject} />}>
+      <Mac className="scene-mac" style={style} alt="The computer, with the two of us cheering on its screen" outside={<FloppyRig t={eject} eject />}>
         <motion.div className="mac-center" style={{ opacity: cheer }}>
           <PixelDuo pose="cheer" />
         </motion.div>

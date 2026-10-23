@@ -9,13 +9,14 @@
   the anti-aliased edge pixels so outlines don't keep a pink fringe.
 - Finds the computer's blank white screen and writes its box as fractions of
   the image to lib/art.json, so the page can lay live content exactly over it.
-- Cuts the hand out of the hand-and-floppy master (the page draws its own
-  floppy, so it can tip it into the slot in 3D) and records where the thumb
-  presses, so the page can pin the thumb to the disk.
+- Splits the hand sheet (one hand drawn in three poses, a row each) into one
+  image per pose, and records the point of each that the page pins to the disk
+  and where its sleeve leaves the right edge, so the page can run it on.
 - Writes public/art/<name>.webp.
 
-Desky, the keychain and the floppy are drawn as SVG in components/parts.tsx:
-they get zoomed far past any raster and they come apart into layers.
+Desky, the keychain and the floppy at the slot are drawn as SVG in
+components/parts.tsx: they get zoomed far past any raster and they come apart
+into layers (or tip into the slot in 3D).
 
 Run: npm run art   (python3 with Pillow + numpy)
 """
@@ -25,7 +26,7 @@ from collections import deque
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC, OUT = ROOT / "art-src", ROOT / "public" / "art"
@@ -33,7 +34,6 @@ SRC, OUT = ROOT / "art-src", ROOT / "public" / "art"
 # name -> (source master, how many screens to find, flat cartoon?)
 ART = {
     "mac": ("mac", 1, False),
-    "hand": ("floppy", 0, True),
     "butterfly": ("butterfly", 0, True),
 }
 
@@ -41,16 +41,18 @@ MAGENTA = np.array([255.0, 0.0, 255.0])
 # ponytail: thresholds tuned by eye on these images; widen LO if a fringe shows
 LO, HI = 40.0, 190.0
 
-# In the floppy master (source px): a point inside the disk's white label, where the hand
-# starts (everything left of it is disk), and the pad of the thumb that presses the disk.
-# ponytail: measured by eye on art-src/floppy.png; re-measure if it's regenerated
-LABEL_SEED, HAND_LEFT, THUMB = (500, 300), 560, (640, 330)
+# The hand sheet's poses, top to bottom, and the point of each that the page pins to the
+# disk (sheet px): the held disk's centre, the gap between thumb and finger, the fingertip.
+# DISK_PX is the held disk's width, which sizes the hand against the page's disk.
+# ponytail: measured by eye on art-src/hands.png; re-measure if it's regenerated
+POSES = {"hold": (326, 161), "pinch": (312, 490), "poke": (218, 780)}
+DISK_PX = 238
 
 
-def flatten(img: Image.Image, up: int = 3, out: int = 2) -> Image.Image:
+def flatten(img: Image.Image, up: int = 3, out: int = 2, method: Image.Quantize = Image.Quantize.MEDIANCUT) -> Image.Image:
     w, h = img.size
     big = img.resize((w * up, h * up), Image.LANCZOS)
-    pal = big.quantize(colors=32, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    pal = big.quantize(colors=32, method=method, dither=Image.Dither.NONE)
     # Mode-filter the palette indices (PIL won't filter "P" images directly)
     idx = Image.frombytes("L", pal.size, pal.tobytes()).filter(ImageFilter.ModeFilter(5))
     smooth = Image.frombytes("P", pal.size, idx.tobytes())
@@ -108,26 +110,35 @@ def screens(rgba: np.ndarray, count: int) -> list[dict]:
     ]
 
 
-def cut_hand(rgba: np.ndarray, k: int = 2) -> tuple[np.ndarray, list[float]]:
-    """Keep only the hand (and its sleeve) from the hand-and-floppy art, at k x the source size."""
-    rgb, a = rgba[..., :3].astype(int), rgba[..., 3]
-    white = (rgb.min(-1) > 230) & (a > 200)  # the shutter is light grey (~210), so it stays out
-    dark = (rgb.max(-1) < 110) & (a > 120)
-    # The label is the one white region that belongs to the disk; every other white region
-    # right of the disk is skin or sleeve. (fromarray images are read-only: copy before filling.)
-    regions = Image.fromarray((white * 255).astype(np.uint8)).copy()
-    ImageDraw.floodfill(regions, (LABEL_SEED[0] * k, LABEL_SEED[1] * k), 128)
-    skin = np.asarray(regions) == 255
-    skin[:, : HAND_LEFT * k] = False
-    near = np.asarray(Image.fromarray((skin * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(19))) > 0
-    hand = skin | (dark & near)  # the outline is whatever ink hugs the skin
-    # Fill holes (the nails): anything the outside can't reach is inside the hand.
-    outside = Image.fromarray(np.where(hand, 0, 255).astype(np.uint8)).copy()
-    ImageDraw.floodfill(outside, (0, 0), 100)
-    hand |= np.asarray(outside) == 255
-    out = rgba.copy()
-    out[..., 3] = (a * hand).astype(np.uint8)
-    return out, [THUMB[0] * k, THUMB[1] * k]
+def hands(k: int = 2) -> dict:
+    """One image per pose of the hand sheet, at k x the source size, each with its pin and sleeve."""
+    # Octree keeps the label's small red name, which median cut merges into the grey ink
+    sheet = flatten(Image.open(SRC / "hands.png").convert("RGB"), method=Image.Quantize.FASTOCTREE)
+    rgba = key_out(np.asarray(sheet, dtype=np.float64))
+    solid = rgba[..., 3] > 8
+    rows = np.flatnonzero(solid.any(axis=1))
+    gaps = np.flatnonzero(np.diff(rows) > 1)
+    bands = [(a, b + 1) for a, b in zip(np.r_[rows[0], rows[gaps + 1]], np.r_[rows[gaps], rows[-1]]) if b - a > 40]
+    assert len(bands) == len(POSES), f"hands: wanted {len(POSES)} poses, found {len(bands)}"
+    meta = {"disk": DISK_PX * k}
+    for (name, (px, py)), (y0, y1) in zip(POSES.items(), bands):
+        y0, y1 = max(y0 - 6, 0), min(y1 + 6, rgba.shape[0])
+        x0 = max(np.flatnonzero(solid[y0:y1].any(axis=0)).min() - 6, 0)
+        img = rgba[y0:y1, x0:]  # keep the right edge: the sleeve runs off it, and the page runs it on
+        h, w = img.shape[:2]
+        edge = img[:, -3]
+        cloth = np.flatnonzero(edge[:, 3] > 128)
+        top, bottom = cloth.min(), cloth.max() + 1
+        line = np.argmin(edge[top:bottom, :3].max(axis=1) < 110)  # dark rows at its top: the outline
+        Image.fromarray(img).save(OUT / f"hand-{name}.webp", "WEBP", quality=88, method=6)
+        meta[name] = {
+            "w": w,
+            "h": h,
+            "pin": {"x": round((px * k - x0) / w, 4), "y": round((py * k - y0) / h, 4)},
+            "sleeve": {"top": round(top / h, 4), "bottom": round(bottom / h, 4), "line": round(int(line) / h, 4)},
+        }
+        print(name, meta[name])
+    return meta
 
 
 def main() -> None:
@@ -137,9 +148,6 @@ def main() -> None:
         src = Image.open(SRC / f"{master}.png").convert("RGB")
         rgb = np.asarray(flatten(src) if flat else upscale(src), dtype=np.float64)
         rgba = key_out(rgb)
-        grip = None
-        if name == "hand":
-            rgba, grip = cut_hand(rgba)
         ys, xs = np.nonzero(rgba[..., 3] > 8)
         pad = 6
         y0, y1 = max(ys.min() - pad, 0), min(ys.max() + pad, rgba.shape[0])
@@ -150,9 +158,8 @@ def main() -> None:
         Image.fromarray(rgba).save(OUT / f"{name}.webp", "WEBP", quality=88, method=6)
         h, w = rgba.shape[:2]
         meta[name] = {"w": w, "h": h, "screens": found}
-        if grip:
-            meta[name]["grip"] = {"x": round((grip[0] - x0) / w, 4), "y": round((grip[1] - y0) / h, 4)}
         print(name, meta[name])
+    meta["hands"] = hands()
     (ROOT / "lib" / "art.json").write_text(json.dumps(meta, indent=2) + "\n")
 
 

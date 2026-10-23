@@ -222,7 +222,12 @@ p:has(> .tape) + p:has(> .tape) .tape, br + .tape { rotate: 0.8deg; }
 .disk-view { position: absolute; inset: 0; }
 .disk { position: absolute; transform-origin: 50% 100%; }
 .disk-seated { position: absolute; height: 0.75cqw; background: var(--purple); border-bottom: 0.3cqw solid var(--ink); border-radius: 0.2cqw; }
-.hand { position: absolute; max-width: none; height: auto; filter: drop-shadow(0 1.2cqw 1.4cqw rgba(0, 0, 0, 0.12)); }
+/* the hand turns and scales about its pin, which each drawing puts on the origin */
+.hand { position: absolute; left: 0; top: 0; transform-origin: 0 0; filter: drop-shadow(0 1.2cqw 1.4cqw rgba(0, 0, 0, 0.12)); }
+.hand-pose { position: absolute; }
+.hand-pose img { display: block; width: 100%; height: auto; max-width: none; }
+/* the drawn sleeve stops at the drawing's edge; this runs it on out of view, in the drawings' own colours */
+.sleeve { position: absolute; left: calc(100% - 0.3cqw); width: 400cqw; background: #fafafa; border: 0 solid #1c132f; }
 /* no disk in the drive: the computer asks for one */
 .insert-disk { place-content: center; justify-items: center; gap: 4cqh; font: 430 7.4cqw/1 var(--serif); letter-spacing: -0.02em; }
 .insert-disk p { margin: 0; }
