@@ -85,7 +85,7 @@ export function Contact() {
           thelocalcode
         </p>
         <div className="footer-row">
-          <span>© {new Date().getFullYear()} thelocalcode · Made in Bengaluru</span>
+          <span>© {new Date().getFullYear()} thelocalcode</span>
           <span>Websites · Branding · Hardware</span>
         </div>
       </div>

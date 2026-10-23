@@ -14,7 +14,7 @@ const description =
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: "thelocalcode — websites and branding, made in Bengaluru",
+  title: "thelocalcode — websites and branding",
   description,
   openGraph: { title: "thelocalcode", description, images: ["/art/mac.webp"] },
 };
